@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
       - name: flask
-        image: flask-hello-k8s
+        image: localhost/flask-hello-k8s:latest
         imagePullPolicy: Never
         ports:
         - containerPort: 5000

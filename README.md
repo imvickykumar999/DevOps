@@ -3,20 +3,38 @@
 ![alt text](screenshots/image-1.png)
 ![alt text](screenshots/image.png)
 
-## 🔧 Prerequisites (Install Once)
+# 🧰 Full DevOps Pipeline: Flask + Docker + K8s + Jenkins (Error-Proof Setup)
 
-### 🖥️ Install on Ubuntu/Debian
+---
+
+## 🔧 Prerequisites (Install Once on Ubuntu/Debian)
 
 ```bash
-# Docker
-sudo apt update && sudo apt install docker.io -y
+# 1. Update package list
+sudo apt update
 
-# Minikube
+# 2. Install dependencies
+sudo apt install -y apt-transport-https ca-certificates curl
+
+# 3. Add the Google Cloud public signing key
+sudo curl -fsSLo /usr/share/keyrings/kubernetes-archive-keyring.gpg https://packages.cloud.google.com/apt/doc/apt-key.gpg
+
+# 4. Add Kubernetes repo
+echo "deb [signed-by=/usr/share/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-xenial main" | \
+  sudo tee /etc/apt/sources.list.d/kubernetes.list > /dev/null
+
+# 5. Update apt again
+sudo apt update
+
+# 6. Install kubectl
+sudo apt install -y kubectl
+
+# 7. Install Docker
+sudo apt install -y docker.io
+
+# 8. Install Minikube
 curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
 sudo install minikube-linux-amd64 /usr/local/bin/minikube
-
-# kubectl (Kubernetes CLI)
-sudo apt install -y kubectl
 ```
 
 ---
@@ -29,9 +47,9 @@ mkdir flask-k8s-demo && cd flask-k8s-demo
 
 ---
 
-## ✅ Step 2: Write Flask App
+## ✅ Step 2: Flask App Code
 
-**`app.py`**:
+**`app.py`**
 
 ```python
 from flask import Flask
@@ -47,7 +65,9 @@ if __name__ == "__main__":
 
 ---
 
-## ✅ Step 3: Write `requirements.txt`
+## ✅ Step 3: Python Dependencies
+
+**`requirements.txt`**
 
 ```txt
 flask
@@ -55,11 +75,11 @@ flask
 
 ---
 
-## ✅ Step 4: Write Dockerfile
+## ✅ Step 4: Dockerfile
 
-**`Dockerfile`**:
+**`Dockerfile`**
 
-```Dockerfile
+```dockerfile
 FROM python:3.12-slim
 WORKDIR /app
 COPY requirements.txt .
@@ -71,7 +91,7 @@ CMD ["python", "app.py"]
 
 ---
 
-## ✅ Step 5: Write Kubernetes Manifests
+## ✅ Step 5: Kubernetes YAMLs
 
 ### 📄 `deployment.yaml`
 
@@ -92,8 +112,8 @@ spec:
     spec:
       containers:
       - name: flask
-        image: flask-hello-k8s
-        imagePullPolicy: Never
+        image: localhost/flask-hello-k8s:latest   # 🔥 Key Fix: use localhost
+        imagePullPolicy: Never                    # 🔥 Avoid remote pull
         ports:
         - containerPort: 5000
 ```
@@ -125,17 +145,14 @@ minikube start
 
 ---
 
-## ✅ Step 7: Build Docker Image and Load into Minikube
+## ✅ Step 7: Build Docker Image (Inside Minikube)
 
 ```bash
-# Tell Docker to build for Minikube
+# Switch to Minikube's Docker engine
 eval $(minikube docker-env)
 
-# Build your Docker image
-docker build -t flask-hello-k8s .
-
-# Load into Minikube’s container registry
-minikube image load flask-hello-k8s
+# Build with localhost prefix to prevent image pull errors
+docker build -t localhost/flask-hello-k8s:latest .
 ```
 
 ---
@@ -147,6 +164,15 @@ kubectl apply -f deployment.yaml
 kubectl apply -f service.yaml
 ```
 
+Verify pods:
+
+```bash
+kubectl get pods
+```
+
+You should see:
+`STATUS: Running`
+
 ---
 
 ## ✅ Step 9: Access Your App
@@ -155,15 +181,13 @@ kubectl apply -f service.yaml
 minikube service flask-service
 ```
 
-It will open something like:
-
-```
-http://192.168.49.2:30001
-```
+It will open:
+**[http://192.168.49.2:30001](http://192.168.49.2:30001)**
+➡️ Shows: `Hello, Kubernetes!`
 
 ---
 
-## ✅ Step 10: Set Up Jenkins in Docker
+## ✅ Step 10: Run Jenkins in Docker
 
 ```bash
 docker run -d --name jenkins \
@@ -177,22 +201,26 @@ docker run -d --name jenkins \
 
 ---
 
-## ✅ Step 11: Configure Jenkins Job (via UI)
+## ✅ Step 11: Setup Jenkins
 
-* Go to: [http://localhost:8080](http://localhost:8080)
-* Unlock Jenkins:
+1. Open [http://localhost:8080](http://localhost:8080)
+2. Unlock Jenkins:
 
-  ```bash
-  docker exec jenkins cat /var/jenkins_home/secrets/initialAdminPassword
-  ```
-* Install Suggested Plugins
-* Create Admin User
+   ```bash
+   docker exec jenkins cat /var/jenkins_home/secrets/initialAdminPassword
+   ```
+3. Install Suggested Plugins
+4. Create Admin User
 
 ---
 
-### 🔨 Create Freestyle Project: `flask-k8s-deploy`
+## ✅ Step 12: Create Freestyle Job in Jenkins
 
-**In “Build Steps → Execute Shell”, paste:**
+1. Job name: `flask-k8s-deploy`
+2. Choose: **Freestyle project**
+3. Add **Build Step → Execute Shell**
+
+### 🔧 Paste this script:
 
 ```bash
 #!/bin/bash
@@ -200,27 +228,36 @@ docker run -d --name jenkins \
 # Use Docker inside Minikube
 eval $(minikube docker-env)
 
-# Build Docker image
-docker build -t flask-hello-k8s .
+# Build Docker image (with localhost tag)
+docker build -t localhost/flask-hello-k8s:latest .
 
-# Load it into Minikube
-minikube image load flask-hello-k8s
-
-# Apply manifests
+# Apply K8s manifests
 kubectl apply -f deployment.yaml
 kubectl apply -f service.yaml
 
-# Show pod status
-kubectl get pods
-
-# Show service URL
+# Optional: Show URL
 minikube service flask-service --url
 ```
 
 ---
 
-## ✅ Final Result
+## ✅ Common Fixes (Already Included)
 
-You’ve now automated the entire process:
+| Problem                  | Fix                                                              |
+| ------------------------ | ---------------------------------------------------------------- |
+| `ErrImagePull`           | Use `imagePullPolicy: Never` & tag as `localhost/image-name:tag` |
+| `SVC_UNREACHABLE`        | Ensure pods are `Running` and service matches deployment labels  |
+| Docker image not visible | Use `eval $(minikube docker-env)` then `docker build`            |
+| Jenkins can't see Docker | Mount `/var/run/docker.sock` and Minikube config into container  |
 
-* Flask App ➝ Docker Image ➝ Kubernetes ➝ NodePort ➝ Jenkins CI
+---
+
+## 🏁 Done!
+
+Your **end-to-end CI/CD pipeline is now ready**:
+
+* Flask app served on Kubernetes ✅
+* Image built locally with Docker ✅
+* Managed and deployed through Jenkins ✅
+* Served via Minikube NodePort ✅
+* All 100% local and error-resilient ✅
